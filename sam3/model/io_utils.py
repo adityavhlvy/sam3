@@ -62,7 +62,7 @@ def load_resource_as_video_frames(
             img /= img_std
             images.append(img)
         images = torch.stack(images)
-        if not offload_video_to_cpu:
+        if not offload_video_to_cpu and torch.cuda.is_available():
             images = images.cuda()
         return images, orig_height, orig_width
 
@@ -103,7 +103,7 @@ def load_image_as_single_frame_video(
 
     img_mean = torch.tensor(img_mean, dtype=torch.float16)[:, None, None]
     img_std = torch.tensor(img_std, dtype=torch.float16)[:, None, None]
-    if not offload_video_to_cpu:
+    if not offload_video_to_cpu and torch.cuda.is_available():
         images = images.cuda()
         img_mean = img_mean.cuda()
         img_std = img_std.cuda()
@@ -200,7 +200,7 @@ def load_video_frames_from_image_folder(
         tqdm(img_paths, desc=f"frame loading (image folder) [rank={RANK}]")
     ):
         images[n], video_height, video_width = _load_img_as_tensor(img_path, image_size)
-    if not offload_video_to_cpu:
+    if not offload_video_to_cpu and torch.cuda.is_available():
         images = images.cuda()
         img_mean = img_mean.cuda()
         img_std = img_std.cuda()
@@ -306,7 +306,7 @@ def load_video_frames_from_video_file_using_cv2(
 
     img_mean = torch.tensor(img_mean, dtype=torch.float16).view(1, 3, 1, 1)
     img_std = torch.tensor(img_std, dtype=torch.float16).view(1, 3, 1, 1)
-    if not offload_video_to_cpu:
+    if not offload_video_to_cpu and torch.cuda.is_available():
         video_tensor = video_tensor.cuda()
         img_mean = img_mean.cuda()
         img_std = img_std.cuda()
@@ -322,7 +322,7 @@ def load_dummy_video(image_size, offload_video_to_cpu, num_frames=60):
     """
     video_height, video_width = 480, 640  # dummy original video sizes
     images = torch.randn(num_frames, 3, image_size, image_size, dtype=torch.float16)
-    if not offload_video_to_cpu:
+    if not offload_video_to_cpu and torch.cuda.is_available():
         images = images.cuda()
     return images, video_height, video_width
 
@@ -391,7 +391,7 @@ class AsyncImageFrameLoader:
         # normalize by mean and std
         img -= self.img_mean
         img /= self.img_std
-        if not self.offload_video_to_cpu:
+        if not self.offload_video_to_cpu and torch.cuda.is_available():
             img = img.cuda()
         self.images[index] = img
         return img

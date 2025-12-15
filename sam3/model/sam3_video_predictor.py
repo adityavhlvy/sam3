@@ -39,6 +39,9 @@ class Sam3VideoPredictor:
         self.video_loader_type = video_loader_type
         from sam3.model_builder import build_sam3_video_model
 
+        # Determine device
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
         self.model = (
             build_sam3_video_model(
                 checkpoint_path=checkpoint_path,
@@ -47,10 +50,13 @@ class Sam3VideoPredictor:
                 geo_encoder_use_img_cross_attn=geo_encoder_use_img_cross_attn,
                 strict_state_dict_loading=strict_state_dict_loading,
                 apply_temporal_disambiguation=apply_temporal_disambiguation,
+                device=self.device,  # Pass the device
             )
-            .cuda()
-            .eval()
         )
+        if self.device == "cuda":
+            self.model = self.model.cuda()
+        
+        self.model = self.model.eval()
 
     @torch.inference_mode()
     def handle_request(self, request):
@@ -291,10 +297,14 @@ class Sam3VideoPredictorMultiGPU(Sam3VideoPredictor):
     def __init__(self, *model_args, gpus_to_use=None, **model_kwargs):
         if gpus_to_use is None:
             # if not specified, use only the current GPU by default
-            gpus_to_use = [torch.cuda.current_device()]
+            if torch.cuda.is_available():
+                gpus_to_use = [torch.cuda.current_device()]
+            else:
+                gpus_to_use = []
 
         IS_MAIN_PROCESS = os.getenv("IS_MAIN_PROCESS", "1") == "1"
-        if IS_MAIN_PROCESS:
+        # Only setup distributed environment if we have GPUs
+        if IS_MAIN_PROCESS and len(gpus_to_use) > 0:
             gpus_to_use = sorted(set(gpus_to_use))
             logger.info(f"using the following GPU IDs: {gpus_to_use}")
             assert len(gpus_to_use) > 0 and all(isinstance(i, int) for i in gpus_to_use)
@@ -303,13 +313,24 @@ class Sam3VideoPredictorMultiGPU(Sam3VideoPredictor):
             os.environ["MASTER_PORT"] = f"{self._find_free_port()}"
             os.environ["RANK"] = "0"
             os.environ["WORLD_SIZE"] = f"{len(gpus_to_use)}"
+        
+        # If we are on CPU (no GPUs), mock environment for single process
+        if len(gpus_to_use) == 0:
+             if IS_MAIN_PROCESS:
+                os.environ["RANK"] = "0"
+                os.environ["WORLD_SIZE"] = "1"
 
         self.gpus_to_use = gpus_to_use
         self.rank = int(os.environ["RANK"])
         self.world_size = int(os.environ["WORLD_SIZE"])
         self.rank_str = f"rank={self.rank} with world_size={self.world_size}"
-        self.device = torch.device(f"cuda:{self.gpus_to_use[self.rank]}")
-        torch.cuda.set_device(self.device)
+        
+        if len(self.gpus_to_use) > 0:
+            self.device = torch.device(f"cuda:{self.gpus_to_use[self.rank]}")
+            torch.cuda.set_device(self.device)
+        else:
+            self.device = torch.device("cpu")
+            
         self.has_shutdown = False
         if self.rank == 0:
             logger.info("\n\n\n\t*** START loading model on all ranks ***\n\n")
@@ -318,6 +339,7 @@ class Sam3VideoPredictorMultiGPU(Sam3VideoPredictor):
         super().__init__(*model_args, **model_kwargs)
         logger.info(f"loading model on {self.rank_str} -- DONE locally")
 
+        # Distributed logic only runs if we have > 1 process (multi-GPU)
         if self.world_size > 1 and self.rank == 0:
             # start the worker processes *after* the model is loaded in the main process
             # so that the main process can run torch.compile and fill the cache first
