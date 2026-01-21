@@ -1,5 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved
 
+# pyre-unsafe
+
 from typing import Tuple
 
 import torch
@@ -9,7 +11,6 @@ from typing_extensions import override
 
 from .act_ckpt_utils import activation_ckpt_wrapper
 from .box_ops import box_cxcywh_to_xyxy
-
 from .model_misc import get_clones
 
 
