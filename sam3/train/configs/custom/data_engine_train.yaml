@@ -1,0 +1,33 @@
+# @package _global_
+defaults:
+  - _self_
+  - ../eval_base.yaml
+
+# DATASET CONFIG
+# This mimics the structure of gold/wiki configs
+train:
+  # This configures the specific Custom Dataset Loader for SA-Co/Gold format
+  dataset:
+    _target_: sam3.train.data.sam3_image_dataset.Sam3ImageDataset
+    img_folder: "PLACEHOLDER_PATH_TO_IMAGES" # User must replace this
+    ann_file: "PLACEHOLDER_PATH_TO_JSON"     # User must replace this
+    transforms:
+      - _target_: sam3.train.data.transforms.Normalize
+        resolution: ${model.resolution}
+    max_ann_per_img: 100
+    multiplier: 1
+    training: true
+    coco_json_loader:
+      _target_: sam3.train.data.coco_json_loaders.SAM3_EVAL_API_FROM_JSON_NP
+      _partial_: true
+
+trainer:
+  mode: train   # 'train' to verify backprop/optimizer works, 'val' for just metrics
+  max_epochs: 1 # Short run just to verify
+  check_val_every_n_epoch: 1
+  gpus: 1
+  
+model:
+  # Point to your starting checkpoint
+  checksum: null 
+  # You might need to adjust paths if running from different dirs
